@@ -1,9 +1,20 @@
-# Source Folder 
+# Source Code
 
-Code that _can_ be removed from the report, should be. And it should be stored here in `/src/`. 
+## Data pipeline
 
-There will, inevitably be work that you have to do to transform, structure, and clean each data set that you use. The primary  source data should be stored in (or downloaded to upon making) the `/data/raw/` folder. Code that cleans, structures, renames, etc this raw data should be stored in `/src/data/` and should have the goal of cleaning each data set and moving a cleaned version of this dataset into `/data/interim/`. 
+The data pipeline is stored in `src/data/` and runs in the following order:
 
-Once each piece of your data is cleaned and structured in `/data/interim/` you can proceed to merge the data and write your analysis dataset into `/data/processed/`. 
+1. `00_download_raw_data.R`
+2. `01_clean_rentals.R`
+3. `02_clean_subway_stations.R`
+4. `03_build_analysis_data.R`
 
-There may be other work that you do in the course of conducting your project that doesn't belong in the Report. Code that does this work should be stored here. 
+Run all four stages from the project root with:
+
+```r
+source("src/data/run_data_pipeline.R")
+```
+
+See [`../data/README.md`](../data/README.md) for source information, cleaning decisions, derived variables, and the exploration/confirmation workflow.
+
+The original course-template README for this folder is preserved in [`TEMPLATE_README.md`](TEMPLATE_README.md).
