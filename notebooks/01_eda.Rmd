@@ -1,0 +1,321 @@
+---
+title: "NYC Rent and Subway Proximity: Exploratory Analysis"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+
+library(tidyverse)
+
+theme_set(theme_minimal())
+```
+
+## Load exploration data
+
+For this EDA, we will filter to the exploration sample.
+
+```{r load-data}
+analysis_data <- read.csv(
+  file.path("data", "processed", "nyc_rent_transit.csv"),
+  na.strings = c("", "NA")
+)
+
+eda_df <- analysis_data |>
+  filter(analysis_split == "exploration")
+
+dim(eda_df)
+head(eda_df)
+```
+
+## Zero values
+
+Looking at the data, we notice some variables have zero values, when that may be unexpected. Check whether zero represents a possible value or missing information.
+
+```{r zero-values}
+eda_df |>
+  summarise(
+    zero_sqft = sum(sqft == 0, na.rm = TRUE),
+    zero_net_effective_rent = sum(net_effective_rent == 0, na.rm = TRUE),
+    zero_months_free = sum(months_free == 0, na.rm = TRUE)
+  )
+```
+
+```{r sqft-zero-distribution, fig.width=7, fig.height=4}
+ggplot(eda_df, aes(x = sqft)) +
+  geom_histogram(binwidth = 100, boundary = 0, color = "white") +
+  coord_cartesian(xlim = c(0, 3000)) +
+  labs(
+    title = "Reported square footage",
+    x = "Square feet",
+    y = "Listings"
+  )
+```
+
+Zero square footage and zero net-effective rent are not possible, so we treat them as missing. Zero free months is meaningful and remains unchanged.
+
+```{r recode-zero-values}
+eda_df <- eda_df |>
+  mutate(
+    sqft = na_if(sqft, 0),
+    net_effective_rent = na_if(net_effective_rent, 0)
+  )
+```
+
+## Missing values
+
+Get summary of missing values.
+
+```{r missing-values}
+missing_summary <- eda_df |>
+  summarise(across(everything(), ~ sum(is.na(.)))) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "missing_count"
+  ) |>
+  mutate(missing_percent = 100 * missing_count / nrow(eda_df)) |>
+  filter(missing_count > 0) |>
+  arrange(desc(missing_percent))
+
+missing_summary
+```
+
+The three main variables with missing values are `net_effective_rent`, `lease_months`, and `sqft`. They affect over 75% of the listings, so using them without imputation would remove many listings.
+
+## Possible duplicates
+
+Repeated listings could give the same apartment extra weight and violate the IID assumption. First, count repeated IDs, URLs, and known address-unit combinations.
+
+```{r duplicates}
+eda_df |>
+  summarise(
+    duplicate_listing_ids = sum(duplicated(listing_id)),
+    duplicate_listing_urls = sum(duplicated(listing_url)),
+    duplicate_address_units = sum(
+      !is.na(unit) & duplicated(paste(borough, street, unit))
+    )
+  )
+```
+
+Listing IDs are unique, but some URLs and address-unit combinations appear more than once. Look at those listings more closely.
+
+```{r duplicate-details}
+repeated_urls <- eda_df |>
+  add_count(listing_url, name = "times_listed") |>
+  filter(times_listed > 1) |>
+  arrange(listing_url) |>
+  select(
+    listing_id, listing_url, borough, street, unit,
+    monthly_rent, available_date, times_listed
+  )
+
+repeated_units <- eda_df |>
+  filter(!is.na(unit)) |>
+  add_count(borough, street, unit, name = "times_listed") |>
+  filter(times_listed > 1) |>
+  arrange(borough, street, unit) |>
+  select(
+    listing_id, listing_url, borough, street, unit,
+    monthly_rent, available_date, times_listed
+  )
+
+repeated_urls
+repeated_units
+```
+
+It seems that a lot of these are the result of apartment relistings. Repeated URLs are strong evidence of duplicate listings. Repeated address-unit combinations may use different URLs, but they still appear to describe the same apartment. Keeping these relistings could violate the independence assumption and give frequently listed apartments too much influence.
+
+We will keep one row per listing URL and one row per borough, street, and unit combination. Since there is no reliable listing date, we will keep the first record in the dataset. This rule will be applied to both samples in `src/data/04_prepare_modeling_data.R`.
+
+## Core variables
+
+Summarize rent and subway distance overall and by borough to understand the main variables we are interested in.
+
+```{r core-summary}
+eda_df |>
+  summarise(
+    listings = n(),
+    median_rent = median(monthly_rent, na.rm = TRUE),
+    mean_rent = mean(monthly_rent, na.rm = TRUE),
+    minimum_rent = min(monthly_rent, na.rm = TRUE),
+    maximum_rent = max(monthly_rent, na.rm = TRUE),
+    median_distance_m = median(distance_to_subway_m, na.rm = TRUE),
+    mean_distance_m = mean(distance_to_subway_m, na.rm = TRUE),
+    minimum_distance_m = min(distance_to_subway_m, na.rm = TRUE),
+    maximum_distance_m = max(distance_to_subway_m, na.rm = TRUE)
+  )
+```
+
+```{r borough-summary}
+eda_df |>
+  group_by(borough) |>
+  summarise(
+    listings = n(),
+    median_rent = median(monthly_rent, na.rm = TRUE),
+    median_distance_m = median(distance_to_subway_m, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(desc(listings))
+```
+
+The median listing has a monthly rent of $4,000 and is 309 meters from the nearest subway station. Manhattan has the highest median rent and the shortest median subway distance, which matches our prior expectations. Staten Island has the lowest median rent and the longest median subway distance.
+
+## Distributions
+
+Start with rent and subway distance, as these are the variables we are most interested in.
+
+```{r rent-distribution-original, fig.width=7, fig.height=4}
+ggplot(eda_df, aes(x = monthly_rent)) +
+  geom_histogram(bins = 40, color = "white") +
+  scale_x_continuous(labels = scales::label_dollar()) +
+  labs(
+    title = "Distribution of advertised monthly rent",
+    x = "Monthly rent",
+    y = "Listings"
+  )
+```
+
+```{r distance-distribution-original, fig.width=7, fig.height=4}
+ggplot(eda_df, aes(x = distance_to_subway_m)) +
+  geom_histogram(bins = 40, color = "white") +
+  labs(
+    title = "Distribution of distance to the nearest station",
+    x = "Distance in meters",
+    y = "Listings"
+  )
+```
+
+Both distributions have long right tails, especially subway distance. Let's use log scales to better visualize the distributions and relationships.
+
+```{r logged-distributions, fig.width=7, fig.height=4}
+ggplot(eda_df, aes(x = monthly_rent)) +
+  geom_histogram(bins = 40, color = "white") +
+  scale_x_log10(labels = scales::label_dollar()) +
+  labs(
+    title = "Distribution of advertised monthly rent on a log scale",
+    x = "Monthly rent, shown on a log scale",
+    y = "Listings"
+  )
+
+ggplot(eda_df, aes(x = distance_to_subway_m)) +
+  geom_histogram(bins = 40, color = "white") +
+  scale_x_log10(labels = scales::label_number()) +
+  labs(
+    title = "Distribution of subway distance on a log scale",
+    x = "Distance in meters, shown on a log scale",
+    y = "Listings"
+  )
+```
+
+These log-scaled distributions are less right-skewed, which may be helpful for modeling. We will compare models with and without these transformations.
+
+## Rent and subway distance
+
+First, view the relationship in its original units.
+
+```{r rent-distance-original, fig.width=7, fig.height=5}
+ggplot(
+  eda_df,
+  aes(x = distance_to_subway_m, y = monthly_rent)
+) +
+  geom_point(alpha = 0.12) +
+  geom_smooth(method = "lm", se = TRUE, color = "#0072B2") +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  labs(
+    title = "Advertised rent and distance to the nearest station",
+    x = "Distance in meters",
+    y = "Monthly rent"
+  )
+```
+
+Now we compare the same relationship after logging both axes.
+
+```{r rent-distance-logged, fig.width=7, fig.height=5}
+ggplot(
+  eda_df,
+  aes(x = distance_to_subway_m, y = monthly_rent)
+) +
+  geom_point(alpha = 0.12) +
+  geom_smooth(method = "lm", se = TRUE, color = "#0072B2") +
+  scale_x_log10() +
+  scale_y_log10(labels = scales::label_dollar()) +
+  labs(
+    title = "Advertised rent and distance to the nearest station",
+    x = "log(Distance in meters)",
+    y = "log(Monthly rent)"
+  )
+```
+
+## Correlations
+
+Next, we want to assess collinearity among the variables. We'll use a correlation matrix to compare the relationships among the numeric variables. Each correlation uses the rows where both variables are available.
+
+```{r correlation-matrix, fig.width=8, fig.height=7}
+correlation_data <- eda_df |>
+  select(
+    monthly_rent,
+    net_effective_rent,
+    lease_months,
+    distance_to_subway_m,
+    bedrooms,
+    bathrooms,
+    half_baths,
+    sqft,
+    months_free
+  ) |>
+  rename(
+    Rent = monthly_rent,
+    `Net effective rent` = net_effective_rent,
+    `Lease months` = lease_months,
+    `Subway distance` = distance_to_subway_m,
+    Bedrooms = bedrooms,
+    Bathrooms = bathrooms,
+    `Half baths` = half_baths,
+    `Square feet` = sqft,
+    `Free months` = months_free
+  )
+
+correlation_matrix <- cor(
+  correlation_data,
+  use = "pairwise.complete.obs"
+)
+
+correlation_plot_data <- as.data.frame(as.table(correlation_matrix)) |>
+  rename(variable_x = Var1, variable_y = Var2, correlation = Freq)
+
+ggplot(
+  correlation_plot_data,
+  aes(x = variable_x, y = variable_y, fill = correlation)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(correlation, 2)), size = 3) +
+  scale_fill_gradient2(
+    low = "#B2182B",
+    mid = "white",
+    high = "#2166AC",
+    midpoint = 0,
+    limits = c(-1, 1)
+  ) +
+  labs(
+    title = "Correlations among numeric variables",
+    x = NULL,
+    y = NULL,
+    fill = "Correlation"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Rent is most strongly correlated with net-effective rent, bathrooms, square footage, and bedrooms. Its correlation with subway distance is weak and negative. Note that correlations involving net-effective rent, lease length, or square footage use much smaller sample sizes because these variables are missing for many listings.
+
+
+## Impact of EDA
+
+Decisions from this notebook are implemented in `src/data/04_prepare_modeling_data.R`. The script currently recodes impossible zero values, removes repeated listings, and creates modeling features; it can be updated as more decisions are made.

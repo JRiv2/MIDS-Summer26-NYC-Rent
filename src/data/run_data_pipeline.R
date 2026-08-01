@@ -4,7 +4,8 @@ pipeline_scripts <- c(
   "00_download_raw_data.R",
   "01_clean_rentals.R",
   "02_clean_subway_stations.R",
-  "03_build_analysis_data.R"
+  "03_build_analysis_data.R",
+  "04_prepare_modeling_data.R"
 )
 
 for (script_name in pipeline_scripts) {

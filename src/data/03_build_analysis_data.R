@@ -80,12 +80,6 @@ analysis_data <- rentals |>
     station_latitude = nearest_stations$station_latitude,
     station_longitude = nearest_stations$station_longitude,
     distance_to_subway_m = round(nearest_station_distance_m, 2)
-  ) |>
-  # Feature Engineering
-  mutate(
-    distance_to_subway_miles = round(distance_to_subway_m / 1609.344, 4),
-    log_monthly_rent = log(monthly_rent),
-    log_distance_m = log(distance_to_subway_m)
   )
 
 # Assign 30% of data to the Exploration set and 70% to the Confirmation set

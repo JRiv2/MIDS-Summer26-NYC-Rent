@@ -24,20 +24,39 @@ Run the complete data pipeline from the project root:
 source("src/data/run_data_pipeline.R")
 ```
 
-The pipeline downloads the original FirstMover rental listings and MTA station data, cleans each source separately, and produces the canonical analysis file:
+The pipeline downloads the original FirstMover rental listings and MTA station data, cleans each source separately, and produces two processed files:
 
 ```text
 data/processed/nyc_rent_transit.csv
+data/processed/nyc_rent_transit_modeling.csv
 ```
+
+`nyc_rent_transit.csv` contains the joined rental and transit data used for exploration, while `nyc_rent_transit_modeling.csv` applies the cleaning decisions and derived variables used for modeling.
 
 See [`data/README.md`](data/README.md) for the data sources, directory roles, cleaning decisions, derived variables, and exploration/confirmation split.
 
 ## Project directories
 
-- `data/`: Raw, interim, and processed data files
-- `notebooks/`: Exploratory analysis and model development
-- `peer_review/`: Individual peer-evaluation template
-- `prompt/`: Assignment prompt and references
-- `references/`: Data dictionaries and supporting materials
-- `reports/`: Final report source and rendered output
-- `src/`: Reusable source code, including the data pipeline
+```text
+├── LICENSE
+├── README.md                         <- Project overview and setup instructions
+├── TEMPLATE_README.md                <- Original course-template README
+├── data
+│   ├── README.md                     <- Data sources and processing decisions
+│   ├── raw                           <- Files downloaded from the original sources
+│   ├── interim                       <- Each source after initial cleaning
+│   ├── processed                     <- Joined and modeling-ready datasets
+│   └── external                      <- Supporting third-party data
+├── notebooks
+│   ├── 01_eda.Rmd                    <- Exploratory analysis
+│   └── 02_simple_model.Rmd           <- Initial regression models
+├── peer_review                       <- Individual peer-evaluation template
+├── prompt                            <- Assignment prompt and references
+├── reports                           <- Final report source and rendered output
+├── src
+│   ├── README.md                     <- Source-code documentation
+│   └── data                          <- Data pipeline scripts
+├── renv                              <- Project environment files
+├── renv.lock                         <- Recorded R package versions
+└── lab_2.Rproj                       <- R project file
+```

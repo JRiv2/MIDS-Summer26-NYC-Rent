@@ -6,7 +6,7 @@ This project downloads the original source data and creates all analysis-ready v
 
 - `raw/`: Files downloaded directly from the original publishers. Do not edit these files manually.
 - `interim/`: Cleaned versions of each individual source, before sources are joined.
-- `processed/`: The canonical listing-level dataset used by notebooks, models, figures, and the final report.
+- `processed/`: The joined dataset used for exploration and the prepared dataset used for modeling.
 - `external/`: Supporting third-party data that are not part of the primary processing pipeline.
 
 CSV files under `data/` are ignored by Git. The scripts, source URLs, and cleaning rules are version-controlled so another person can reconstruct the data.
@@ -61,21 +61,17 @@ The stages are:
 1. `00_download_raw_data.R`: download the two original source files.
 2. `01_clean_rentals.R`: retain the five NYC boroughs and select and rename listing variables.
 3. `02_clean_subway_stations.R`: select station identifiers, names, and centroid coordinates.
-4. `03_build_analysis_data.R`: assign each listing to its nearest station using Haversine distance, perform feature engineering, and create a reproducible exploration/confirmation split.
+4. `03_build_analysis_data.R`: assign each listing to its nearest station using Haversine distance and create a reproducible exploration/confirmation split.
+5. `04_prepare_modeling_data.R`: apply modeling-data rules and create modeling features while preserving the existing split.
 
-The final output is `processed/nyc_rent_transit.csv`.
+`processed/nyc_rent_transit.csv` contains the joined rental and transit data. The EDA notebook uses its exploration rows to choose cleaning and modeling rules.
+
+The pipeline then applies the current rules to all rows and creates `processed/nyc_rent_transit_modeling.csv` for modeling. Stage 04 can be updated as additional decisions are made.
 
 ## Cleaning and operationalization decisions
 
 - Keep only `Bronx`, `Brooklyn`, `Manhattan`, `Queens`, and `Staten Island`.
 - Calculate straight-line distances with the Haversine formula and an Earth radius of 6,371,000 meters.
 - Use a fixed random seed to assign 30% of records to exploration and 70% to confirmation. Modeling decisions should be made with the exploration sample; final reported estimates should be recalculated on the confirmation sample.
-
-## To do
-
-- [ ] Decide how to handle unusual rents, bedroom counts, bathroom counts, and square footage. Any exclusions should be justified and chosen using the exploration sample.
-- [ ] Decide whether to use square footage or net-effective rent given their high missingness.
-- [ ] Investigate repeated listing URLs and repeated address-unit combinations to determine whether any listings are duplicates.
-- [ ] Review variables with little or no variation, such as `no_fee`, before choosing the final model variables.
-- [ ] Create a short data dictionary for the variables used in the final analysis.
-- [ ] Record how many observations are excluded from the final modeling sample and the reason for each exclusion.
+- Treat zero square footage and zero net-effective rent as missing in the modeling dataset because neither is a possible observed value.
+- Keep one row per listing URL and one row per borough, street, and unit combination.
