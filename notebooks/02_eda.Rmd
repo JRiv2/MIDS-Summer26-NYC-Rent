@@ -1,0 +1,424 @@
+---
+title: "Exploratory Data Analysis"
+author: "Emily"
+date: "2026-08-02"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+
+library(tidyverse)
+library(scales)
+
+theme_set(theme_minimal())
+```
+
+## Purpose
+
+This exploratory analysis examines the quality, distributions, and relationships in the NYC rental and subway-accessibility data before regression modeling. All decisions are based on the exploration sample so that the confirmation sample can remain separate until the final analysis.
+
+## Load the exploration data
+
+```{r load-data}
+analysis_data <- read.csv(
+  file.path("data", "processed", "nyc_rent_transit.csv"),
+  na.strings = c("", "NA")
+)
+
+eda_df <- analysis_data |>
+  filter(analysis_split == "exploration")
+```
+
+## Dataset overview
+
+The exploration sample contains 6,115 rental listings and 32 variables. Each row represents one advertised rental listing. The analysis focuses on advertised monthly rent as the outcome and distance to the nearest subway station as the primary predictor. Apartment characteristics and location variables may help describe important differences among listings.
+
+```{r dataset-overview}
+dim(eda_df)
+names(eda_df)
+glimpse(eda_df)
+```
+
+## Data quality
+
+Before examining distributions and relationships, we check for missing values, impossible zero values, and potential duplicate listings. These issues may affect which variables can be used in the regression models and how the results should be interpreted.
+
+### Missing values
+
+```{r missing-values}
+missing_summary <- eda_df |>
+  summarise(
+    across(everything(), ~ sum(is.na(.)))
+  ) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "missing_count"
+  ) |>
+  mutate(
+    missing_percent = round(
+      100 * missing_count / nrow(eda_df),
+      1
+    )
+  ) |>
+  filter(missing_count > 0) |>
+  arrange(desc(missing_percent))
+
+knitr::kable(
+  missing_summary,
+  col.names = c(
+    "Variable",
+    "Missing Count",
+    "Missing Percent"
+  ),
+  caption = "Missing values in the exploration sample"
+)
+```
+
+### Impossible zero values
+
+Some variables may use zero to represent missing or unreported information rather than a meaningful value.
+
+```{r zero-values}
+zero_summary <- tibble(
+
+  Variable = c(
+    "Square footage",
+    "Net effective rent",
+    "Months free"
+  ),
+
+  Zero_Count = c(
+    sum(eda_df$sqft == 0, na.rm = TRUE),
+    sum(eda_df$net_effective_rent == 0, na.rm = TRUE),
+    sum(eda_df$months_free == 0, na.rm = TRUE)
+  )
+
+) |>
+
+mutate(
+  Percent = round(
+    Zero_Count / nrow(eda_df) * 100,
+    1
+  )
+)
+
+zero_summary
+```
+
+### Potential duplicate listings
+
+Repeated listings could give the same apartment more influence in the analysis. We therefore check for repeated listing IDs, URLs, and address-unit combinations.
+
+```{r duplicates}
+eda_df |>
+  summarise(
+    duplicate_listing_ids = sum(
+      duplicated(listing_id)
+    ),
+    duplicate_listing_urls = sum(
+      duplicated(listing_url)
+    ),
+    duplicate_address_units = sum(
+      !is.na(unit) &
+        duplicated(
+          paste(borough, street, unit)
+        )
+    )
+  )
+```
+
+### Distribution of Monthly Rent
+
+Monthly rent is the response variable in the regression analysis. We examine its distribution to identify skewness, potential outliers, and determine whether a transformation may improve its suitability for linear regression.
+
+#### Summary Statistics
+
+```{r rent-summary}
+
+rent_summary <- eda_df |>
+  summarise(
+    observations = n(),
+    mean_rent = mean(monthly_rent, na.rm = TRUE),
+    median_rent = median(monthly_rent, na.rm = TRUE),
+    sd_rent = sd(monthly_rent, na.rm = TRUE),
+    min_rent = min(monthly_rent, na.rm = TRUE),
+    max_rent = max(monthly_rent, na.rm = TRUE)
+  )
+
+knitr::kable(
+  rent_summary,
+  digits = 0,
+  caption = "Summary statistics for monthly rent"
+)
+```
+
+#### Monthly Rent Distribution
+
+```{r rent-histogram, fig.width=7, fig.height=5}
+ggplot(eda_df, aes(x = monthly_rent)) +
+  geom_histogram(
+    bins = 40,
+    color = "white",
+    fill = "#2C7FB8"
+  ) +
+  geom_vline(
+    xintercept = median(eda_df$monthly_rent, na.rm = TRUE),
+    color = "darkgreen",
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = mean(eda_df$monthly_rent, na.rm = TRUE),
+    color = "red",
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  scale_x_continuous(
+    labels = scales::label_dollar(),
+    breaks = seq(0, 20000, by = 2500)
+  ) +
+  labs(
+    title = "Monthly Rent Distribution",
+    subtitle = "Exploration sample",
+    x = "Monthly rent",
+    y = "Number of listings"
+  )
+```
+The dashed green line represents the median monthly rent, while the dashed red line represents the mean monthly rent.
+
+#### Log-Transformed Monthly Rent Distribution
+```{r}
+ggplot(eda_df, aes(x = log(monthly_rent))) +
+  geom_histogram(
+    bins = 40,
+    color = "white",
+    fill = "#2C7FB8"
+  ) +
+  labs(
+    title = "Distribution of Log Monthly Rent",
+    subtitle = "Exploration sample",
+    x = "Log-transformed monthly rent",
+    y = "Number of listings"
+  )
+```
+
+
+#### Interpretation 
+The distribution of monthly rent is strongly right-skewed, with most listings clustered between approximately $2,500 and $5,000 and a relatively small number of high-priced listings forming a long upper tail. The mean exceeds the median, indicating that higher-priced listings pull the average upward. After applying a logarithmic transformation, the distribution becomes noticeably more symmetric, suggesting that modeling the logarithm of monthly rent may improve model fit and reduce the influence of extreme observations.
+
+
+### Distribution of Distance to the Nearest Subway Station
+
+Distance to the nearest subway station is the primary explanatory variable in this study. We examine its distribution to identify skewness, potential outliers, and whether a transformation may improve its suitability for regression analysis.
+
+#### Summary Statistics 
+```{r subway-summary}
+
+subway_summary <- eda_df |>
+  summarise(
+    observations = n(),
+    mean_distance = mean(distance_to_subway_m, na.rm = TRUE),
+    median_distance = median(distance_to_subway_m, na.rm = TRUE),
+    sd_distance = sd(distance_to_subway_m, na.rm = TRUE),
+    min_distance = min(distance_to_subway_m, na.rm = TRUE),
+    max_distance = max(distance_to_subway_m, na.rm = TRUE)
+  )
+
+knitr::kable(
+  subway_summary,
+  digits = 1,
+  caption = "Summary statistics for distance to the nearest subway station"
+)
+```
+
+#### Distance to the Nearest Subway Station
+```{r subway-histogram, fig.width=7, fig.height=5}
+
+ggplot(
+  eda_df,
+  aes(x = distance_to_subway_m)
+) +
+  geom_histogram(
+    bins = 40,
+    color = "white",
+    fill = "#2C7FB8"
+  ) +
+  geom_vline(
+    xintercept = median(eda_df$distance_to_subway_m),
+    color = "darkgreen",
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = mean(eda_df$distance_to_subway_m),
+    color = "red",
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Distance to the Nearest Subway Station",
+    subtitle = "Exploration sample",
+    x = "Distance (meters)",
+    y = "Number of listings"
+  )
+
+```
+
+The dashed green line represents the median distance, while the dashed red line represents the mean distance.
+
+#### Log Transformed distance 
+```{r subway-log-histogram}
+
+ggplot(
+  eda_df,
+  aes(x = log(distance_to_subway_m))
+) +
+  geom_histogram(
+    bins = 40,
+    color = "white",
+    fill = "#2C7FB8"
+  ) +
+  labs(
+    title = "Log-Transformed Distance to the Nearest Subway Station",
+    subtitle = "Exploration sample",
+    x = "Natural log of distance (meters)",
+    y = "Number of listings"
+  )
+```
+
+#### Interpretation
+
+Distance to the nearest subway station is positively skewed, with most rental listings located within approximately 500 meters of a station and a relatively small number of listings located substantially farther away. The mean distance exceeds the median, indicating that a small number of distant listings increase the average distance. After applying a logarithmic transformation, the distribution becomes more symmetric, suggesting that a log-transformed predictor may be appropriate if model diagnostics indicate nonlinearity or influential observations.
+
+
+### Relationship Between Monthly Rent and Distance to the Nearest Subway Station
+
+```{r}
+ggplot(eda_df, aes(
+    x = distance_to_subway_m,
+    y = monthly_rent
+)) +
+    geom_point(
+        alpha = 0.08,
+        size = 0.8,
+        color = "#2C7FB8"
+    ) +
+    geom_smooth(
+        method = "lm",
+        se = TRUE,
+        color = "firebrick"
+    ) +
+    scale_y_continuous(labels = scales::label_dollar()) +
+    labs(
+        title = "Monthly Rent vs. Distance to the Nearest Subway Station",
+        subtitle = "Exploration sample",
+        x = "Distance to nearest subway station (meters)",
+        y = "Monthly rent"
+    )
+```
+#### Interpretation 
+The scatterplot suggests a modest negative relationship between monthly rent and distance to the nearest subway station. Apartments located farther from subway stations tend to have lower rents on average, although there is considerable variation in rental prices, indicating that additional apartment and neighborhood characteristics are also likely to influence rent.
+
+### Correlation Among Key Numeric Variables
+
+Before fitting regression models, we examine the pairwise correlations among the primary numeric variables. This helps identify variables that are strongly associated with monthly rent and highlights potential relationships among predictors that may be relevant when specifying regression models.
+
+#### Correlation Matrix
+
+```{r correlation-matrix}
+library(corrplot)
+
+numeric_vars <- eda_df |>
+  select(
+    `Monthly Rent` = monthly_rent,
+    `Distance to Subway` = distance_to_subway_m,
+    Bedrooms = bedrooms,
+    Bathrooms = bathrooms,
+    `Square Feet` = sqft
+  )
+
+cor_matrix <- cor(
+  numeric_vars,
+  use = "complete.obs"
+)
+
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  addCoef.col = "black",
+  number.cex = 0.8,
+  tl.col = "black",
+  tl.srt = 45
+)
+```
+
+#### Interpretation
+
+Monthly rent is moderately positively correlated with both the number of bathrooms (0.47) and bedrooms (0.40), indicating that larger apartments generally command higher rents. Distance to the nearest subway station has only a weak negative correlation with monthly rent (-0.11), suggesting that transit accessibility alone explains relatively little of the variation in rental prices. The predictor variables are not highly correlated with one another, with the strongest relationship occurring between bedrooms and bathrooms (0.48), indicating that severe multicollinearity is unlikely to be a concern in the regression models.
+
+### Monthly Rent by Borough
+
+Borough is an important location characteristic that may help explain differences in rental prices across New York City. Comparing rent distributions by borough provides context for the weak overall correlation between rent and subway distance and helps motivate the inclusion of geographic controls in the regression models.
+
+#### Borough-Level Summary
+
+```{r borough-summary}
+borough_summary <- eda_df |>
+  group_by(borough) |>
+  summarise(
+    Listings = n(),
+    `Median Rent` = median(monthly_rent, na.rm = TRUE),
+    `Mean Rent` = mean(monthly_rent, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(desc(`Median Rent`))
+
+knitr::kable(
+  borough_summary,
+  digits = 0,
+  caption = "Monthly rent by borough"
+)
+```
+
+#### Monthly Rent Distribution by Borough
+
+```{r rent-by-borough, fig.width=8, fig.height=5}
+ggplot(
+  eda_df,
+  aes(
+    x = reorder(borough, monthly_rent, FUN = median),
+    y = monthly_rent
+  )
+) +
+  geom_boxplot(
+    fill = "#2C7FB8",
+    outlier.alpha = 0.08
+) +
+  scale_y_continuous(
+    labels = scales::label_dollar()
+  ) +
+  coord_flip() +
+  labs(
+    title = "Monthly Rent Varies Substantially by Borough",
+    subtitle = "Exploration sample",
+    x = NULL,
+    y = "Monthly rent"
+  )
+```
+
+#### Interpretation
+
+Manhattan has the highest median monthly rent ($4,800), followed by Brooklyn ($3,800), while the Bronx has the lowest median rent ($2,732). The boxplots also show substantially greater variability in Manhattan rents, with many high-priced listings contributing to a long upper tail. These geographic differences suggest that borough is an important determinant of rental prices and should be considered in the regression models. Staten Island contains only seven listings in the exploration sample, so comparisons involving that borough should be interpreted cautiously.
+
