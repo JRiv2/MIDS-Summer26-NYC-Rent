@@ -1,0 +1,203 @@
+---
+title: "NYC Rent and Subway Proximity: Modelling Exploration"
+output: html_document
+---
+
+#Install libraries and load modeling data
+
+```{r}
+library(tidyverse)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+
+modeling_data <- read.csv(
+  file.path("data", "processed", "nyc_rent_transit_modeling.csv"),
+  na.strings = c("", "NA")
+)
+```
+# Set up dataframes
+
+```{r}
+# Full exploration sample
+explore_df <- modeling_data |>
+  filter(analysis_split == "exploration")
+
+# Complete-case sample for models requiring all core covariates
+model_df <- explore_df |>
+  drop_na(
+    monthly_rent,
+    bedrooms,
+    bathrooms,
+    sqft,
+    borough,
+    distance_to_subway_m
+  )
+
+nrow(explore_df)
+nrow(model_df)
+```
+# Run m1
+
+This simple model m1 just captures the unconditional relationship between our primary X (distance to transit stop) and Y (monthly rent) variables. We'll run the model on both our exploratory dataframe (which keeps all the rows) and our filtered dataframe that drops rows with missing variable values. 
+
+```{r}
+m1 <- lm(
+  monthly_rent ~ distance_to_subway_m,
+  data = explore_df
+)
+
+m1_common <- lm(
+  monthly_rent ~ distance_to_subway_m,
+  data = model_df
+)
+
+summary(m1)
+summary(m1_common)
+```
+# Observations from m1
+For the full exploration sample (used in m1):
+- n = 6075 apartments
+- Distance coefficient = -0.594
+- p < 2 x 10^-16
+- R^2 = 0.0125
+- In summary: an apartment located 100m farther from the nearest subway station is associated with about $59 lower monthly rent on average
+For the complete-case exploration sample (used in m1_complete):
+n = 1353 apartments
+- Distance coefficient = -0.843
+- p = 9.63 * 10^-10
+- R^2 = 0.0273
+- In summary: an apartment located 100m farther from the nearest subway station is associated with about $84 lower monthly rent on average
+
+# Run m2
+
+Model m2 adds key apartment characteristics such as number of bedrooms, number of bathroomns, square footage and borough to see if controlling for these variables provides a better explanation for our Y variable. 
+
+```{r}
+
+
+m2 <- lm(
+  monthly_rent ~
+    distance_to_subway_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    borough,
+  data = model_df
+)
+
+summary(m2)
+```
+# Observations from m2
+
+- Distance coefficient is -0.3675 so we can interpret this as about $36.75 lower rent per additional 100m of distance from nearest subway station
+- Distance coefficient has p = 0.000662, providing strong statistical evidence of negative conditional association
+- Adding control variables changed coefficient from -0.843 in m1 to -0.368 in m2
+- Since over half of our raw association has disappeared, we can deduce that apartments near subway stations aren't simply more expensive because they're near subway stations and that part of the raw relationship is associated with differences in apartment characteristics. 
+- Model dramatically improved - R^2 went from 0.0273 to 0.524
+
+# Using neighborhood instead of borough
+
+A potential model m3 coule be just like m2 except we swap out borough for neighborhood as our main geographic control. There is massive variation within a borough (Williamsburg vs East New York in Brooklyn) so neighborhood might be a better indicator variable. 
+```{r}
+length(unique(model_df$neighborhood))
+```
+Results above show that there are 139 neighborhood groups, which is a lot of parameters relative to 1353 aparmtent observations. It is very likely that many of these neighborhoods will have only one or two listings, which will be useless in estimate coefficients. 
+
+# Visualizing relationships
+
+```{r}
+ggplot(model_df, aes(x = distance_to_subway_m, y = monthly_rent)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(
+    title = "Monthly Rent and Distance to Nearest Subway",
+    x = "Distance to Nearest Subway (meters)",
+    y = "Monthly Rent ($)"
+  ) +
+  theme_minimal()
+```
+```{r}
+ggplot(model_df, aes(x = log_distance_m, y = log_monthly_rent)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(
+    title = "Log Rent and Log Distance to Nearest Subway",
+    x = "Log Distance to Nearest Subway",
+    y = "Log Monthly Rent"
+  ) +
+  theme_minimal()
+```
+# Plot observations
+
+Curve in the first plot drops steeply at relatively short distances from subway stops and then flattens considerably, meaning raw linear linear mapping is not the best form for our model. The log-log plot looks better behaved, with the scatter points being more spread out across the x-axis and the relationship looks more linear (though there is still a noticeable curve)
+
+# Running m3
+
+We'll actually try three different versions of m3 to see whether we need to transform one or both of the primary variables.
+
+```{r}
+# Linear rent, log distance
+m3_logx <- lm(
+  monthly_rent ~
+    log_distance_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    borough,
+  data = model_df
+)
+
+# Log rent, linear distance
+m3_logy <- lm(
+  log_monthly_rent ~
+    distance_to_subway_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    borough,
+  data = model_df
+)
+
+# Log rent, log distance
+m3_loglog <- lm(
+  log_monthly_rent ~
+    log_distance_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    borough,
+  data = model_df
+)
+
+summary(m3_logx)
+summary(m3_logy)
+summary(m3_loglog)
+```
+# Observations from m3
+
+- When logging our X variable (distance), our R^2 value only goes up to 0.5233 from the earlier model's 0.5211 , so logging distance on its own doesn't get us very much - in this case, coefficient of -314.39 means that for 1% increase in distance associates with a $3.14 decrease in monthly rent
+- When logging rent, the model's adjusted R^2 jumps to 0.5656, which indicates a better form for the model -in this case, coefficient of -0.00008089 means that for every 100m of additional difference, there is an associated 0.81% decrease in monthly rent when holding other characteristics constant
+- Logging both variables gives us a R^2 of 0.5677, our highest yet (but not that much higher than logging just rent) - this version with its coefficient of -0.06296 means that 1% increase in distance is associated with approximately 0.063% decrease in monthly rent
+
+# Creating residual vs fitted plots
+```{r}
+
+plot(m2, which = 1, main = "Level-Level")
+plot(m3_logx, which = 1, main = "Log X")
+plot(m3_logy, which = 1, main = "Log Y")
+plot(m3_loglog, which = 1, main = "Log-Log")
+```
+# Plot observations
+
+When we are logging neither variable or just logging distance, residual values fall below 0 and then rise consdierably at higher fitted rents. Additionally, the vertical spread of residuals gets much larger as fitted rent increases. When we are logging just rent or logging both rent and distance, the residual cloud becomes more evenly distributed around zero, with a flatter line. Based off this, we can say it makes sense to use log_monthly_rent since raw rent is extremely right skewed and the original rent vs distance relationship was strongly nonlinear. 
+
+# Evaluating heteroskedasticity
+```{r}
+coeftest(m3_logy, vcov = vcovHC(m3_logy, type = "HC1"))
+
+coeftest(m3_loglog, vcov = vcovHC(m3_loglog, type = "HC1"))
+```
+Checking the robust standard errors does not change our substantive conclusion. In both the log Y and log log models, distance to the nearest subway station remains statistically and significantly associated with monthly rent (p < 0.001). In the log-log model, a 10% increase in distance from the subway is associated with a 0.63% decrease in monthly rent, holding apartment characteristics and borough constant. 
+
+```
