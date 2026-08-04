@@ -353,6 +353,9 @@ The plot above showed relatively stable residual variance across most fitted val
 stargazer(
   confirm_m3_loglog,
   type = "text",
+  se = list(
+    sqrt(diag(vcovHC(confirm_m3_loglog, type = "HC1")))
+  ),
   title = "Final regression results",
   dep.var.labels = "Log monthly rent",
   covariate.labels = c(
@@ -413,4 +416,3 @@ ggplot(
   coord_cartesian(ylim = c(0, 25000)) +
   theme_minimal()
 ```
-
