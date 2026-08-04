@@ -244,7 +244,7 @@ summary(m4_neighborhood)$adj.r.squared
 # M4_neighborhood observations
 
 - Our distance coefficient has shrunk from -0.063 to -0.015 - our estimated association has become 0.15% lower rent for 10% increase in subway distance when holding apartment characteristics and neighborhood constant
-- Our distance coefficient is no longer statistically significant using robust standard errors (SE = 0.012, p = 0.219) - this means geographic confounding is huge
+- Our distance coefficient is no longer statistically significant using robust standard errors (SE = 0.012, p = 0.219) - this means geographic confounding could be significant. 
 - Our R^2 has jumped from 0.568 to 0.760
 - This could suggest much of the association observed in less geographically controlled models may reflect differences in rents and subway accessibility across neighborhoods rather than differences in subway proximity within neighborhoods.
 - Trade-off here is that we are using 138 neighborhood indicators based on sparse groups. 
@@ -327,6 +327,7 @@ summary(confirm_m3_loglog)
 # Observations from m3_log_log on confirmation dataframe
 
 - Logging both variables gives us a R^2 of 0.6164 and a distance coefficient of -0.07137 means that 1% increase in distance is associated with approximately 0.07137% decrease in monthly rent
+- Comparing this distance coefficient with the -0.06296 coefficient we got from our exploratory sample shows a consistency in direction and magnitude, giving strong confirmation of our exploratory finding that when we hold apartment characteristics and borough constand, apartments farther from subway stations tend to have lower rents. 
 
 # Creating residuals vs fitted plot for m3_log_log on confirmation dataframe
 
@@ -335,7 +336,7 @@ plot(confirm_m3_loglog, which = 1, main = "Log-Log")
 ```
 # Observations from residuals vs fitted plot of m3_log_log on confirmation dataframe
 
-Our residual cloud is very evenly distributed around 0 in this model with a slight increase in vertical spread of the residuals as the logged fitted rent values becomes larger.
+The residuals are generally centered around zero across the main range of fitted values and the sever heteroskedasticity we observed in the level-rent model we ran on the exploratory dataframe is substantially reduced. Some variation in residual spread and several outliers do remain, which motivated us to use HC1 robust standard errors. 
 
 # Evaluating heteroskedasticity
 
@@ -344,7 +345,7 @@ coeftest(confirm_m3_loglog, vcov = vcovHC(confirm_m3_loglog, type = "HC1"))
 ```
 # Observations from t-test
 
-Running the t-test shows that are our standard errors are fairly robust. In this log-log model, a 10% increase in distance from the subway is associated with a 0.71% decrease in monthly rent, holding apartment characteristics and borough constant.
+The plot above showed relatively stable residual variance across most fitted values but there was still some variation and several outliers. Using HC1 robust standard errors, we find that the distance coefficient remained statistically significant (coefficient is -0.0714, robust SE is 0.0064, p < 0.001)
 
 # Final regression table
 
@@ -367,3 +368,49 @@ stargazer(
   omit.stat = c("f", "ser")
 )
 ```
+
+# Generating model prediction plot
+
+```{r}
+pred <- predict(
+  confirm_m3_loglog,
+  newdata = confirm_model_df,
+  interval = "confidence"
+)
+
+prediction_df <- cbind(confirm_model_df, pred)
+
+prediction_df <- prediction_df |>
+  mutate(
+    predicted_rent = exp(fit),
+    lower_rent = exp(lwr),
+    upper_rent = exp(upr),
+    distance_miles = distance_to_subway_m / 1609.34
+  )
+
+ggplot(
+  prediction_df,
+  aes(
+    x = distance_to_subway_m / 1609.34,
+    y = predicted_rent,
+    color = borough
+  )
+) +
+  geom_point(alpha = 0.15) +
+  geom_smooth(
+    method = "lm",
+    se = FALSE,
+    linewidth = 1
+  ) +
+  labs(
+    title = "Rent and Distance to the Nearest Subway Station",
+    subtitle = "Observed listings with linear regression lines by borough",
+    x = "Distance to Nearest Subway Station (miles)",
+    y = "Predicted Rent ($)",
+    color = "Borough"
+  ) +
+  scale_y_continuous(labels = scales::dollar) +
+  coord_cartesian(ylim = c(0, 25000)) +
+  theme_minimal()
+```
+
