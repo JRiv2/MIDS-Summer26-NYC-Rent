@@ -170,7 +170,7 @@ m3_loglog <- lm(
   data = model_df
 )
 
-# Exploring relationship between borough and 
+# Exploring relationship between borough and distance to nearest train station
 m3_loglog_distance_borough <- lm(
   log_monthly_rent ~
     bedrooms +
@@ -298,6 +298,8 @@ confirm_model_df <- confirm_df |>
     borough,
     distance_to_subway_m
   )
+
+nrow(confirm_model_df)
 ```
 ```{r}
 
