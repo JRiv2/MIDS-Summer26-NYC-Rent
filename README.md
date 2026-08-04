@@ -49,7 +49,7 @@ See [`data/README.md`](data/README.md) for the data sources, directory roles, cl
 │   └── external                      <- Supporting third-party data
 ├── notebooks
 │   ├── 01_eda.Rmd                    <- Exploratory analysis
-│   └── 02_simple_model.Rmd           <- Initial regression models
+│   └── 02_model_exploration.Rmd      <- Regression model exploration and results
 ├── peer_review                       <- Individual peer-evaluation template
 ├── prompt                            <- Assignment prompt and references
 ├── reports                           <- Final report source and rendered output
