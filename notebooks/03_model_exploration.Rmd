@@ -170,15 +170,27 @@ m3_loglog <- lm(
   data = model_df
 )
 
+# Exploring relationship between borough and 
+m3_loglog_distance_borough <- lm(
+  log_monthly_rent ~
+    bedrooms +
+    bathrooms +
+    sqft +
+    log_distance_m*borough,
+  data = model_df
+)
+
 summary(m3_logx)
 summary(m3_logy)
 summary(m3_loglog)
+summary(m3_loglog_distance_borough)
 ```
 # Observations from m3
 
 - When logging our X variable (distance), our R^2 value only goes up to 0.5233 from the earlier model's 0.5211 , so logging distance on its own doesn't get us very much - in this case, coefficient of -314.39 means that for 1% increase in distance associates with a $3.14 decrease in monthly rent
 - When logging rent, the model's adjusted R^2 jumps to 0.5656, which indicates a better form for the model -in this case, coefficient of -0.00008089 means that for every 100m of additional difference, there is an associated 0.81% decrease in monthly rent when holding other characteristics constant
 - Logging both variables gives us a R^2 of 0.5677, our highest yet (but not that much higher than logging just rent) - this version with its coefficient of -0.06296 means that 1% increase in distance is associated with approximately 0.063% decrease in monthly rent
+- For fun, when we measure the interaction between borough and log_distance_m, we find that our R^2 value hardly changes (from 0.5677 to 0.5702) and our p-values for the interaction terms remain high - this means the relationship between subway distance and rent does not vary much when we change borough. 
 
 # Creating residual vs fitted plots
 ```{r}
@@ -267,4 +279,65 @@ summary(m4_geo_coordinates)$adj.r.squared
 - Our R^2 is 0.61 - better than in our log-log borough model but worse than our log-log neighborhood model
 - Longitude and latitude having a linear relationship with rent is pretty crude though 
 - Overall, this model independently points us in the same direction as the neighborhood model - more fine-grained location control shows location can be a significant confounder
+
+# Pulling in our confirmation dataset
+
+```{r}
+
+# Full exploration sample
+confirm_df <- modeling_data |>
+  filter(analysis_split == "confirmation")
+
+# Complete-case sample for models requiring all core covariates
+confirm_model_df <- confirm_df |>
+  drop_na(
+    monthly_rent,
+    bedrooms,
+    bathrooms,
+    sqft,
+    borough,
+    distance_to_subway_m
+  )
+```
+```{r}
+
+```
+# Running m3log_log model on our confirmation dataset
+
+```{r}
+# Log rent, log distance
+confirm_m3_loglog <- lm(
+  log_monthly_rent ~
+    log_distance_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    borough,
+  data = confirm_model_df
+)
+
+summary(confirm_m3_loglog)
+```
+# Observations from m3_log_log on confirmation dataframe
+
+- Logging both variables gives us a R^2 of 0.6164 and a distance coefficient of -0.07137 means that 1% increase in distance is associated with approximately 0.07137% decrease in monthly rent
+
+# Creating residuals vs fitted plot for m3_log_log on confirmation dataframe
+
+```{r}
+plot(confirm_m3_loglog, which = 1, main = "Log-Log")
+```
+# Observations from residuals vs fitted plot of m3_log_log on confirmation dataframe
+
+Our residual cloud is very evenly distributed around 0 in this model with a slight increase in vertical spread of the residuals as the logged fitted rent values becomes larger.
+
+# Evaluating heteroskedasticity
+
+```{r}
+coeftest(confirm_m3_loglog, vcov = vcovHC(confirm_m3_loglog, type = "HC1"))
+```
+# Observations from t-test
+
+Running the t-test shows that are our standard errors are fairly robust. In this log-log model, a 10% increase in distance from the subway is associated with a 0.71% decrease in monthly rent, holding apartment characteristics and borough constant.
+
 ```
