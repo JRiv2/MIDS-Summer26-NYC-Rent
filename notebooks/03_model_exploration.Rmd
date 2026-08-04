@@ -3,6 +3,10 @@ title: "NYC Rent and Subway Proximity: Modelling Exploration"
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+```
+
 #Install libraries and load modeling data
 
 ```{r}
@@ -264,7 +268,7 @@ m4_geo_coordinates <- lm(
 
 coeftest(
   m4_geo_coordinates,
-  vcov = vcovHC(m4_geo, type = "HC1")
+  vcov = vcovHC(m4_geo_coordinates, type = "HC1")
 )
 
 coef(m4_geo_coordinates)["log_distance_m"]
@@ -342,4 +346,24 @@ coeftest(confirm_m3_loglog, vcov = vcovHC(confirm_m3_loglog, type = "HC1"))
 
 Running the t-test shows that are our standard errors are fairly robust. In this log-log model, a 10% increase in distance from the subway is associated with a 0.71% decrease in monthly rent, holding apartment characteristics and borough constant.
 
+# Final regression table
+
+```{r final-regression-table}
+stargazer(
+  confirm_m3_loglog,
+  type = "text",
+  title = "Final regression results",
+  dep.var.labels = "Log monthly rent",
+  covariate.labels = c(
+    "Log distance to subway",
+    "Bedrooms",
+    "Bathrooms",
+    "Square feet",
+    "Brooklyn",
+    "Manhattan",
+    "Queens",
+    "Staten Island"
+  ),
+  omit.stat = c("f", "ser")
+)
 ```
