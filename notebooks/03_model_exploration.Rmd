@@ -71,7 +71,7 @@ n = 1353 apartments
 
 # Run m2
 
-Model m2 adds key apartment characteristics such as number of bedrooms, number of bathroomns, square footage and borough to see if controlling for these variables provides a better explanation for our Y variable. 
+Model m2 adds key apartment characteristics such as number of bedrooms, number of bathrooms, square footage and borough to see if controlling for these variables provides a better explanation for our Y variable. 
 
 ```{r}
 
@@ -93,16 +93,16 @@ summary(m2)
 - Distance coefficient is -0.3675 so we can interpret this as about $36.75 lower rent per additional 100m of distance from nearest subway station
 - Distance coefficient has p = 0.000662, providing strong statistical evidence of negative conditional association
 - Adding control variables changed coefficient from -0.843 in m1 to -0.368 in m2
-- Since over half of our raw association has disappeared, we can deduce that apartments near subway stations aren't simply more expensive because they're near subway stations and that part of the raw relationship is associated with differences in apartment characteristics. 
+- The drastic change in the distance coefficient suggests that a substantial portion of the unconditional association between subway proximity and rent is explained by differences in observed apartment characteristics and borough. 
 - Model dramatically improved - R^2 went from 0.0273 to 0.524
 
 # Using neighborhood instead of borough
 
-A potential model m3 coule be just like m2 except we swap out borough for neighborhood as our main geographic control. There is massive variation within a borough (Williamsburg vs East New York in Brooklyn) so neighborhood might be a better indicator variable. 
+A potential model m3 could be just like m2 except we swap out borough for neighborhood as our main geographic control. There is massive variation within a borough (Williamsburg vs East New York in Brooklyn) so neighborhood might be a better indicator variable. 
 ```{r}
 length(unique(model_df$neighborhood))
 ```
-Results above show that there are 139 neighborhood groups, which is a lot of parameters relative to 1353 aparmtent observations. It is very likely that many of these neighborhoods will have only one or two listings, which will be useless in estimate coefficients. 
+Results above show that there are 139 neighborhood groups, which is a lot of parameters relative to 1353 apartment observations. It is very likely that many of these neighborhoods will have only one or two listings, which will be useless in estimate coefficients. 
 
 # Visualizing relationships
 
@@ -190,7 +190,7 @@ plot(m3_loglog, which = 1, main = "Log-Log")
 ```
 # Plot observations
 
-When we are logging neither variable or just logging distance, residual values fall below 0 and then rise consdierably at higher fitted rents. Additionally, the vertical spread of residuals gets much larger as fitted rent increases. When we are logging just rent or logging both rent and distance, the residual cloud becomes more evenly distributed around zero, with a flatter line. Based off this, we can say it makes sense to use log_monthly_rent since raw rent is extremely right skewed and the original rent vs distance relationship was strongly nonlinear. 
+When we are logging neither variable or just logging distance, residual values fall below 0 and then rise considerably at higher fitted rents. Additionally, the vertical spread of residuals gets much larger as fitted rent increases. When we are logging just rent or logging both rent and distance, the residual cloud becomes more evenly distributed around zero, with a flatter line. Based off this, we can say it makes sense to use log_monthly_rent since raw rent is extremely right skewed and the original rent vs distance relationship was strongly nonlinear. 
 
 # Evaluating heteroskedasticity
 ```{r}
@@ -200,4 +200,71 @@ coeftest(m3_loglog, vcov = vcovHC(m3_loglog, type = "HC1"))
 ```
 Checking the robust standard errors does not change our substantive conclusion. In both the log Y and log log models, distance to the nearest subway station remains statistically and significantly associated with monthly rent (p < 0.001). In the log-log model, a 10% increase in distance from the subway is associated with a 0.63% decrease in monthly rent, holding apartment characteristics and borough constant. 
 
+# Experimenting M4_neighborhood
+
+We'll try swapping out borough for neighborhood to see if we get a better fitted model, keeping in mind the tradeoff we discussed earlier with the sheer number of neighborhood indicator variables. 
+
+```{r}
+m4_neighborhood <- lm(
+  log_monthly_rent ~
+    log_distance_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    neighborhood,
+  data = model_df
+)
+
+coeftest(
+  m4_neighborhood,
+  vcov = vcovHC(m4_neighborhood, type = "HC1")
+)
+
+coef(m4_neighborhood)["log_distance_m"]
+
+summary(m4_neighborhood)$adj.r.squared
+```
+
+# M4_neighborhood observations
+
+- Our distance coefficient has shrunk from -0.063 to -0.015 - our estimated association has become 0.15% lower rent for 10% increase in subway distance when holding apartment characteristics and neighborhood constant
+- Our distance coefficient is no longer statistically significant using robust standard errors (SE = 0.012, p = 0.219) - this means geographic confounding is huge
+- Our R^2 has jumped from 0.568 to 0.760
+- This could suggest much of the association observed in less geographically controlled models may reflect differences in rents and subway accessibility across neighborhoods rather than differences in subway proximity within neighborhoods.
+- Trade-off here is that we are using 138 neighborhood indicators based on sparse groups. 
+
+# Running M4_geographic_coordinates
+
+We'll try to run a model that is using our latitude and longitude as a geography control
+
+```{r}
+m4_geo_coordinates <- lm(
+  log_monthly_rent ~
+    log_distance_m +
+    bedrooms +
+    bathrooms +
+    sqft +
+    latitude +
+    longitude +
+    borough,
+  data = model_df
+)
+
+coeftest(
+  m4_geo_coordinates,
+  vcov = vcovHC(m4_geo, type = "HC1")
+)
+
+coef(m4_geo_coordinates)["log_distance_m"]
+
+summary(m4_geo_coordinates)$adj.r.squared
+```
+#M4_geographic_coordinates observations
+
+- Our distance coefficient becomes -0.02564, meaning 10% increase in distance from nearest subway station is associated with 0.26% decrease in monthly rent
+- p-value is 0.0228, which shows statistical significance that the neighborhood model did not
+- The change in distance coefficient from -0.063 in the log-log borough model to -0.026 in the log-log borough model that also controls for geographic coordinates implies that within borough geographic variation accounts for substantial portion of the observed association. 
+- Our R^2 is 0.61 - better than in our log-log borough model but worse than our log-log neighborhood model
+- Longitude and latitude having a linear relationship with rent is pretty crude though 
+- Overall, this model independently points us in the same direction as the neighborhood model - more fine-grained location control shows location can be a significant confounder
 ```
